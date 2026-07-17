@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const WORKSPACE_DIR = '/Users/victor/UnoAgencyAgent';
+const WORKSPACE_DIR = path.resolve(__dirname, '..', '..');
 
 // Iniciar Rastreabilidade (Trace) de uma execução
 function startTrace(prompt, systemPrompt, provider, model) {

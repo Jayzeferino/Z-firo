@@ -3,7 +3,7 @@ const path = require('path');
 const db = require('./db');
 
 // O diretório do workspace do usuário
-const WORKSPACE_DIR = '/Users/victor/UnoAgencyAgent';
+const WORKSPACE_DIR = path.resolve(__dirname, '..', '..');
 
 // Helper para converter o nome do produto em um nome de pasta seguro
 function sanitizeFolderName(name) {

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, globalShortcut } = require('electron');
+const { app, BrowserWindow, ipcMain, globalShortcut, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const db = require('./db');
@@ -11,6 +11,8 @@ const gateway = require('./gateway');
 
 
 let mainWindow;
+let normalBounds = null;
+let isSimulatedMaximized = false;
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
@@ -26,6 +28,8 @@ function createMainWindow() {
       contextIsolation: true,
     },
   });
+
+  // Determinar se estamos em ambiente de desenvolvimento
 
   // Determinar se estamos em ambiente de desenvolvimento
   const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
@@ -85,11 +89,50 @@ ipcMain.on('window:expand', () => {
 
 ipcMain.on('window:shrink', () => {
   if (mainWindow) {
+    if (isSimulatedMaximized) {
+      isSimulatedMaximized = false;
+      mainWindow.webContents.send('window:maximized-change', false);
+    }
     mainWindow.setSize(550, 350, true); // Animar tamanho
     mainWindow.setResizable(false);
     mainWindow.setAlwaysOnTop(true);
     mainWindow.center();
   }
+});
+
+ipcMain.on('window:maximize', () => {
+  if (mainWindow) {
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { x, y, width, height } = primaryDisplay.workArea;
+
+    if (isSimulatedMaximized) {
+      if (normalBounds) {
+        mainWindow.setBounds(normalBounds, true);
+      } else {
+        mainWindow.setSize(1100, 680, true);
+        mainWindow.center();
+      }
+      isSimulatedMaximized = false;
+      mainWindow.webContents.send('window:maximized-change', false);
+    } else {
+      normalBounds = mainWindow.getBounds();
+      mainWindow.setBounds({ x, y, width, height }, true);
+      isSimulatedMaximized = true;
+      mainWindow.webContents.send('window:maximized-change', true);
+    }
+  }
+});
+
+ipcMain.handle('window:capture', async () => {
+  try {
+    if (mainWindow) {
+      const nativeImage = await mainWindow.webContents.capturePage();
+      return nativeImage.toDataURL();
+    }
+  } catch (error) {
+    console.error('Failed to capture page:', error);
+  }
+  return null;
 });
 
 // --- Handlers Reais do SQLite (Memórias e Produtos) ---
@@ -144,7 +187,7 @@ ipcMain.handle('fs:read-memory', async (event, produtoNome) => {
       .replace(/[^a-z0-9-_]/g, '_')
       .substring(0, 50);
 
-    const memoryPath = path.join('/Users/victor/UnoAgencyAgent', 'produtos', folderName, '.assistant', 'MEMORY.md');
+    const memoryPath = path.join(__dirname, '..', '..', 'produtos', folderName, '.assistant', 'MEMORY.md');
     if (fs.existsSync(memoryPath)) {
       return fs.readFileSync(memoryPath, 'utf-8');
     }

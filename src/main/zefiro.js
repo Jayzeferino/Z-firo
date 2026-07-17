@@ -23,7 +23,7 @@ class Zefiro {
 
     // 1. Injetar a "Alma" do assistente vinda de SOUL.md
     try {
-      const soulPath = path.join('/Users/victor/UnoAgencyAgent', 'SOUL.md');
+      const soulPath = path.join(__dirname, '..', '..', 'SOUL.md');
       if (fs.existsSync(soulPath)) {
         const soulContent = fs.readFileSync(soulPath, 'utf-8');
         prompt += `INSTRUÇÕES GERAIS DE PERSONALIDADE E COMPORTAMENTO (SOUL.md):\n${soulContent}\n\n`;
@@ -77,7 +77,7 @@ class Zefiro {
 
   // Executa um turno completo de IA: monta Working Memory -> executa loop de chamada -> salva e espelha em MD
   async respond(userMessage, options = {}) {
-    const { agentProfile, chatHistory = [], tone = 'persuasivo', simpleLanguage = false, sessaoId = `session_${Date.now()}`, webContents } = options;
+    const { agentProfile, chatHistory = [], tone = 'persuasivo', simpleLanguage = false, sessaoId = `session_${Date.now()}`, webContents, attachments = [] } = options;
 
     // 1. Retrieval Gate: Decidir se a rodada requer consulta ao SQLite FTS5 (BM25)
     let contextMemory = '';
@@ -97,7 +97,7 @@ class Zefiro {
     // 4. Selecionar Provedor de IA ativo
     let provider = '';
     let apiKey = '';
-    for (const prov of ['openai', 'groq', 'gemini', 'deepseek']) {
+    for (const prov of ['openai', 'groq', 'gemini', 'deepseek', 'openrouter']) {
       const key = security.getKey(prov);
       if (key) {
         provider = prov;
@@ -120,12 +120,31 @@ class Zefiro {
     try {
       if (provider === 'openai') {
         const openai = new OpenAI({ apiKey });
+        const userContent = [{ type: 'text', text: userMessage }];
+        if (attachments && attachments.length > 0) {
+          attachments.forEach(att => {
+            if (att.mimeType.startsWith('image/')) {
+              userContent.push({
+                type: 'image_url',
+                image_url: {
+                  url: `data:${att.mimeType};base64,${att.data}`
+                }
+              });
+            } else if (att.mimeType.startsWith('audio/')) {
+              userContent.push({
+                type: 'text',
+                text: `[Áudio anexo: ${att.mimeType}]`
+              });
+            }
+          });
+        }
+
         const stream = await openai.chat.completions.create({
           model: 'gpt-4o-mini',
           messages: [
             { role: 'system', content: systemPrompt },
             ...chatHistory,
-            { role: 'user', content: userMessage }
+            { role: 'user', content: userContent.length === 1 ? userMessage : userContent }
           ],
           stream: true,
         });
@@ -168,7 +187,20 @@ class Zefiro {
         chatHistory.forEach(h => {
           contents.push({ role: h.role === 'user' ? 'user' : 'model', parts: [{ text: h.content }] });
         });
-        contents.push({ role: 'user', parts: [{ text: userMessage }] });
+
+        const userParts = [];
+        if (attachments && attachments.length > 0) {
+          attachments.forEach(att => {
+            userParts.push({
+              inlineData: {
+                data: att.data,
+                mimeType: att.mimeType
+              }
+            });
+          });
+        }
+        userParts.push({ text: userMessage });
+        contents.push({ role: 'user', parts: userParts });
 
         const result = await model.generateContentStream({ contents });
         for await (const chunk of result.stream) {
@@ -187,6 +219,52 @@ class Zefiro {
             { role: 'system', content: systemPrompt },
             ...chatHistory,
             { role: 'user', content: userMessage }
+          ],
+          stream: true,
+        });
+
+        for await (const chunk of stream) {
+          const text = chunk.choices[0]?.delta?.content || '';
+          if (text) {
+            finalResponseText += text;
+            if (webContents) webContents.send('chat:stream', text);
+          }
+        }
+      }
+      else if (provider === 'openrouter') {
+        const client = new OpenAI({
+          apiKey,
+          baseURL: 'https://openrouter.ai/api/v1',
+          defaultHeaders: {
+            'HTTP-Referer': 'https://zefiro.ai',
+            'X-Title': 'Zefiro'
+          }
+        });
+        const userContent = [{ type: 'text', text: userMessage }];
+        if (attachments && attachments.length > 0) {
+          attachments.forEach(att => {
+            if (att.mimeType.startsWith('image/')) {
+              userContent.push({
+                type: 'image_url',
+                image_url: {
+                  url: `data:${att.mimeType};base64,${att.data}`
+                }
+              });
+            } else if (att.mimeType.startsWith('audio/')) {
+              userContent.push({
+                type: 'text',
+                text: `[Áudio anexo: ${att.mimeType}]`
+              });
+            }
+          });
+        }
+
+        const stream = await client.chat.completions.create({
+          model: 'google/gemini-2.5-flash',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            ...chatHistory,
+            { role: 'user', content: userContent.length === 1 ? userMessage : userContent }
           ],
           stream: true,
         });

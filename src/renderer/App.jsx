@@ -9,6 +9,16 @@ export default function App() {
   const [filteredProdutos, setFilteredProdutos] = useState([]);
   const [selectedProduto, setSelectedProduto] = useState(null);
   const [isOnboarding, setIsOnboarding] = useState(false);
+  const [isMaximized, setIsMaximized] = useState(false);
+
+  useEffect(() => {
+    if (window.api && window.api.onMaximizedChange) {
+      const unsubscribe = window.api.onMaximizedChange((val) => {
+        setIsMaximized(val);
+      });
+      return unsubscribe;
+    }
+  }, []);
 
   // Carregar produtos da base de dados local na inicialização
   useEffect(() => {
@@ -87,7 +97,7 @@ export default function App() {
   };
 
   return (
-    <div className="h-full flex flex-col justify-center items-center p-4 bg-transparent font-sans selection:bg-accent/40 select-none">
+    <div className={`h-full w-full flex flex-col justify-center items-center ${isExpanded && isMaximized ? 'p-0' : 'p-4'} bg-transparent font-sans selection:bg-accent/40 select-none`}>
       
       {/* ALTERNADOR DE WIDGET FLUTUANTE (Discreto na borda) */}
       <button
@@ -151,8 +161,31 @@ export default function App() {
                 </div>
               ))
             ) : (
-              <div className="p-3 text-[10px] text-slate-500 text-center">
-                Digite para buscar produtos ou digite o nome de um novo produto para iniciá-lo.
+              <div className="space-y-1">
+                {produtos.length > 0 ? (
+                  <>
+                    <div className="px-3 py-1 text-[9px] font-bold text-slate-500 uppercase tracking-widest border-b border-white/5 mb-1">
+                      Seus Produtos ({produtos.length})
+                    </div>
+                    {produtos.map(p => (
+                      <div 
+                        key={p.id}
+                        onClick={() => selectProduto(p)}
+                        className="p-3 rounded-xl hover:bg-white/5 transition-all cursor-pointer flex items-center justify-between"
+                      >
+                        <div className="flex items-center">
+                          <span className="text-lg mr-3">{p.avatar}</span>
+                          <span className="text-xs font-medium text-white">{p.nome}</span>
+                        </div>
+                        <span className="text-[10px] text-slate-500">Abrir Copiloto →</span>
+                      </div>
+                    ))}
+                  </>
+                ) : (
+                  <div className="p-3 text-[10px] text-slate-500 text-center">
+                    Digite para buscar produtos ou digite o nome de um novo produto para iniciá-lo.
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -161,9 +194,16 @@ export default function App() {
         /* EXPANDED MODE */
         <div className="w-full h-full flex justify-center items-center">
           {isOnboarding ? (
-            <Onboarding onComplete={handleOnboardingComplete} />
+            <Onboarding 
+              produtos={produtos} 
+              onSelectProduto={(p) => {
+                setSelectedProduto(p);
+                setIsOnboarding(false);
+              }}
+              onComplete={handleOnboardingComplete} 
+            />
           ) : (
-            <Dashboard produto={selectedProduto} onBack={handleCloseDashboard} />
+            <Dashboard produto={selectedProduto} onBack={handleCloseDashboard} isMaximized={isMaximized} />
           )}
         </div>
       )}

@@ -39,7 +39,8 @@ const STEPS = [
   }
 ];
 
-export default function Onboarding({ onComplete }) {
+export default function Onboarding({ onComplete, produtos = [], onSelectProduto }) {
+  const [showSelection, setShowSelection] = useState(produtos && produtos.length > 0);
   const [currentStep, setCurrentStep] = useState(0);
   const [formData, setFormData] = useState({
     nome: '',
@@ -58,7 +59,7 @@ export default function Onboarding({ onComplete }) {
       setError('Por favor, preencha este campo para continuar.');
       return;
     }
-    
+
     setError('');
     if (currentStep < STEPS.length - 1) {
       setCurrentStep(currentStep + 1);
@@ -91,14 +92,60 @@ export default function Onboarding({ onComplete }) {
 
   const activeStep = STEPS[currentStep];
 
+  if (showSelection) {
+    return (
+      <div className="w-full max-w-2xl mx-auto p-8 bg-slate-950/95 border border-white/5 rounded-3xl glow-indigo-subtle flex flex-col justify-between min-h-[400px] text-white">
+        <div>
+          <div className="text-center mb-6">
+            <span className="text-4xl block mb-2">🍃</span>
+            <h2 className="text-xl font-bold text-white">Seus Produtos no Zéfiro</h2>
+            <p className="text-xs text-slate-400 mt-1">Selecione um produto existente ou crie um novo para começar.</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6 max-h-[220px] overflow-y-auto custom-scrollbar p-1">
+            {produtos.map(p => (
+              <div
+                key={p.id}
+                onClick={() => onSelectProduto && onSelectProduto(p)}
+                className="p-4 rounded-2xl bg-white/5 border border-white/5 hover:border-indigo-500/35 hover:bg-white/10 transition-all cursor-pointer flex items-center gap-3 active:scale-98"
+              >
+                <span className="text-2xl p-2 rounded-xl bg-white/5">{p.avatar || '🚀'}</span>
+                <div className="truncate">
+                  <span className="text-xs font-bold text-white block truncate">{p.nome}</span>
+                  <span className="text-[10px] text-slate-400 block truncate">{p.promessa || 'Sem promessa cadastrada'}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex justify-between items-center mt-6 pt-4 border-t border-white/5">
+          <button
+            onClick={() => onSelectProduto && produtos.length > 0 && onSelectProduto(produtos[0])}
+            className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white transition-all"
+          >
+            Cancelar
+          </button>
+
+          <button
+            onClick={() => setShowSelection(false)}
+            className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-lg shadow-indigo-600/20 active:scale-95 flex items-center gap-2"
+          >
+            <span>+ Criar Novo Produto</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="w-full max-w-xl mx-auto p-6 bg-slate-950/30 border border-white/5 rounded-2xl glow-indigo-subtle flex flex-col justify-between min-h-[380px]">
+    <div className="w-full max-w-xl mx-auto p-6 bg-slate-950/95 border border-white/5 rounded-2xl glow-indigo-subtle flex flex-col justify-between min-h-[380px]">
       <div>
         {/* Progress Bar */}
         <div className="flex gap-1 mb-6">
           {STEPS.map((_, i) => (
-            <div 
-              key={i} 
+            <div
+              key={i}
               className={`h-1.5 flex-1 rounded-full transition-all duration-300 ${i <= currentStep ? 'bg-indigo-500' : 'bg-white/10'}`}
             />
           ))}

@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
 
-const WORKSPACE_DIR = '/Users/victor/UnoAgencyAgent';
+const WORKSPACE_DIR = path.resolve(__dirname, '..', '..');
 
 // Helper para parsear arquivos com frontmatter YAML
 function parseMarkdownWithFrontmatter(filePath) {
@@ -93,6 +93,8 @@ function scanAgents() {
             name: parsed.name,
             role: parsed.role || 'Especialista de Marketing',
             avatar: parsed.avatar || '🤖',
+            description: parsed.description || '',
+            body: parsed.body || '',
             system_prompt: parsed.system_prompt || parsed.body || '',
             filePath: fullPath
           });
@@ -108,6 +110,8 @@ function scanAgents() {
               name: data.name,
               role: data.role || 'Especialista de Marketing',
               avatar: data.avatar || '🤖',
+              description: data.description || '',
+              body: data.body || '',
               system_prompt: data.system_prompt || '',
               filePath: fullPath
             });

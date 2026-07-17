@@ -18,7 +18,7 @@ function readSkillPromptBody(filePath) {
 
 // Gateway: Chat Conversacional de Agentes
 async function handleChatStream(event, payload) {
-  const { produtoId, agentId, message, chatHistory, tone, simpleLanguage, sessaoId } = payload;
+  const { produtoId, agentId, message, chatHistory, tone, simpleLanguage, sessaoId, attachments } = payload;
   const webContents = event.sender;
 
   try {
@@ -36,7 +36,8 @@ async function handleChatStream(event, payload) {
       tone,
       simpleLanguage,
       sessaoId,
-      webContents
+      webContents,
+      attachments
     });
 
   } catch (error) {
@@ -51,7 +52,7 @@ async function executeSkill(payload) {
 
   try {
     // 1. Localizar e ler o arquivo físico da Skill (Procedural Memory)
-    const skillPath = path.join('/Users/victor/UnoAgencyAgent/skills', skillId);
+    const skillPath = path.join(__dirname, '..', '..', 'skills', skillId);
     if (!fs.existsSync(skillPath)) {
       throw new Error(`Arquivo da Habilidade não encontrado: ${skillPath}`);
     }

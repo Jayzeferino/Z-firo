@@ -4,6 +4,12 @@ contextBridge.exposeInMainWorld('api', {
   // Controle de Janela
   expandWindow: () => ipcRenderer.send('window:expand'),
   shrinkWindow: () => ipcRenderer.send('window:shrink'),
+  maximizeWindow: () => ipcRenderer.send('window:maximize'),
+  onMaximizedChange: (callback) => {
+    const subscription = (event, isMaximized) => callback(isMaximized);
+    ipcRenderer.on('window:maximized-change', subscription);
+    return () => ipcRenderer.removeListener('window:maximized-change', subscription);
+  },
   
   // Produtos
   getProdutos: () => ipcRenderer.invoke('db:get-produtos'),
@@ -32,4 +38,7 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.removeListener('chat:stream', subscription);
   },
   sendChatMessage: (payload) => ipcRenderer.send('chat:send', payload),
+
+  // Captura de Tela
+  captureWindow: () => ipcRenderer.invoke('window:capture'),
 });

@@ -1,5 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Settings from './Settings';
+import LeftPanel from './LeftPanel';
+import RightPanel from './RightPanel';
+import AgentWelcomeCard from './AgentWelcomeCard';
+import { translateSkill, translateRole, CATEGORY_MAP } from '../utils/marketingUtils';
 
 // Helper para converter Markdown simples em HTML
 function renderSimpleMarkdown(md) {
@@ -8,34 +12,34 @@ function renderSimpleMarkdown(md) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
-  
+
   // Títulos
-  html = html.replace(/^# (.*$)/gim, '<h1 class="text-2xl font-bold text-white mt-4 mb-2">$1</h1>');
-  html = html.replace(/^## (.*$)/gim, '<h2 class="text-xl font-bold text-white mt-4 mb-2 border-b border-white/5 pb-1">$1</h2>');
-  html = html.replace(/^### (.*$)/gim, '<h3 class="text-lg font-bold text-white mt-3 mb-1">$1</h3>');
-  
+  html = html.replace(/^# (.*$)/gim, '<h1 class="text-xl font-bold text-white mt-4 mb-2">$1</h1>');
+  html = html.replace(/^## (.*$)/gim, '<h2 class="text-lg font-bold text-white mt-4 mb-2 border-b border-white/5 pb-1">$1</h2>');
+  html = html.replace(/^### (.*$)/gim, '<h3 class="text-base font-bold text-white mt-3 mb-1">$1</h3>');
+
   // Negrito
   html = html.replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>');
-  
+
   // Itálico
   html = html.replace(/\*(.*?)\*/gim, '<em>$1</em>');
-  
+
   // Listas
   html = html.replace(/^\- (.*$)/gim, '<li class="ml-4 list-disc text-slate-300">$1</li>');
-  
+
   // Parágrafos e quebras de linha
   html = html.split('\n\n').map(p => {
     if (p.trim().startsWith('<h') || p.trim().startsWith('<li') || p.trim().startsWith('<ul')) {
       return p;
     }
-    return `<p class="mb-3 text-slate-300 text-sm leading-relaxed">${p}</p>`;
+    return `<p class="mb-3 text-slate-300 text-xs leading-relaxed">${p}</p>`;
   }).join('\n');
-  
+
   return html;
 }
 
-export default function Dashboard({ produto, onBack }) {
-  const [activeTab, setActiveTab] = useState('chat'); // chat, skills, memory, db, settings
+export default function Dashboard({ produto, onBack, isMaximized }) {
+  const [centerView, setCenterView] = useState('chat'); // chat, skill, memory, db, settings
   const [skills, setSkills] = useState([]);
   const [agents, setAgents] = useState([]);
   const [selectedSkill, setSelectedSkill] = useState(null);
@@ -46,18 +50,40 @@ export default function Dashboard({ produto, onBack }) {
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
-  
+
   // Dados de Memória e Database
   const [memoryContent, setMemoryContent] = useState('');
   const [dbFacts, setDbFacts] = useState([]);
   const [dbEpisodes, setDbEpisodes] = useState([]);
   const [dbSearchQuery, setDbSearchQuery] = useState('');
+  const [skillsSearchQuery, setSkillsSearchQuery] = useState('');
+
+  // Panel collapse states
+  const [leftPanelExpanded, setLeftPanelExpanded] = useState(true);
+  const [rightPanelExpanded, setRightPanelExpanded] = useState(true);
+  const [activeCategoryFilter, setActiveCategoryFilter] = useState('all');
+
+  // Multimodal attachments state
+  const [attachments, setAttachments] = useState([]); // Array of { type: 'image' | 'audio', data: base64, mimeType: string, previewUrl: string }
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+
+  const fileInputRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const recordingIntervalRef = useRef(null);
+  const chatEndRef = useRef(null);
 
   // Carregar dados na inicialização
   useEffect(() => {
     loadSkillsAndAgents();
     loadMemoryData();
   }, [produto]);
+
+  useEffect(() => {
+    if (chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [chatMessages]);
 
   const loadSkillsAndAgents = async () => {
     if (window.api) {
@@ -73,13 +99,11 @@ export default function Dashboard({ produto, onBack }) {
 
   const loadMemoryData = async () => {
     if (window.api) {
-      // 1. Carregar fatos e episódios do SQLite
       const facts = await window.api.getFacts(produto.id);
       const episodes = await window.api.getEpisodes(produto.id);
       setDbFacts(facts || []);
       setDbEpisodes(episodes || []);
 
-      // 2. Carregar arquivo MEMORY.md físico
       const mdContent = await window.api.readMemoryFile(produto.nome);
       setMemoryContent(mdContent || '# Memória não sincronizada ou vazia.');
     }
@@ -98,9 +122,15 @@ export default function Dashboard({ produto, onBack }) {
 
   // Enviar prompt do chat
   const handleSendChat = async () => {
-    if (!chatInput.trim() || isGenerating) return;
+    if ((!chatInput.trim() && attachments.length === 0) || isGenerating) return;
 
-    const userMsg = { role: 'user', content: chatInput, date: new Date().toLocaleTimeString() };
+    const userMsg = {
+      role: 'user',
+      content: chatInput,
+      date: new Date().toLocaleTimeString(),
+      attachments: attachments.map(att => ({ type: att.type, previewUrl: att.previewUrl }))
+    };
+
     setChatMessages(prev => [...prev, userMsg]);
     setChatInput('');
     setIsGenerating(true);
@@ -108,9 +138,15 @@ export default function Dashboard({ produto, onBack }) {
     const assistantMsg = { role: 'assistant', content: '', date: new Date().toLocaleTimeString() };
     setChatMessages(prev => [...prev, assistantMsg]);
 
+    const payloadAttachments = attachments.map(att => ({
+      data: att.data,
+      mimeType: att.mimeType
+    }));
+
+    setAttachments([]); // Limpar anexos enviados
+
     // Ponte para o Stream da IA
     if (window.api && window.api.sendChatMessage) {
-      // Preparar cancelamento de stream anterior se houver
       const unsubscribe = window.api.onChatStream((chunk) => {
         setChatMessages(prev => {
           const updated = [...prev];
@@ -122,22 +158,21 @@ export default function Dashboard({ produto, onBack }) {
         });
       });
 
-      // Simulação ou chamada real
       window.api.sendChatMessage({
         produtoId: produto.id,
         agentId: selectedAgent?.id,
         message: userMsg.content,
         chatHistory: chatMessages.slice(-10).map(m => ({ role: m.role, content: m.content })),
         tone: toneMatrix,
-        simpleLanguage
+        simpleLanguage,
+        attachments: payloadAttachments
       });
 
-      // Para fechar o listener no final
       setTimeout(() => {
         unsubscribe();
         setIsGenerating(false);
         loadMemoryData(); // Recarrega para obter novas conversas no db
-      }, 5000); // Exemplo de tempo limite ou aguardar o evento de fim
+      }, 5000);
     } else {
       // Mock se fora do Electron
       setTimeout(() => {
@@ -145,7 +180,7 @@ export default function Dashboard({ produto, onBack }) {
           const updated = [...prev];
           const last = updated[updated.length - 1];
           if (last) {
-            last.content = `Olá! Sou o ${selectedAgent?.name || 'Assistente'}. Em ambiente fora do Electron, estou simulando o alinhamento em tom ${toneMatrix}. ${simpleLanguage ? 'Estou escrevendo sem termos difíceis em inglês.' : ''}`;
+            last.content = `Olá! Sou o ${selectedAgent?.name || 'Assistente'}. [Mock] Recebi seu input com ${payloadAttachments.length} anexo(s) em tom ${toneMatrix}.`;
           }
           return updated;
         });
@@ -170,6 +205,7 @@ export default function Dashboard({ produto, onBack }) {
 
       if (res && res.success) {
         alert(`Resultado Gerado pela Habilidade:\n\n${res.result}`);
+        setCenterView('chat');
         setSelectedSkill(null);
         setSkillFormData({});
       } else {
@@ -178,10 +214,10 @@ export default function Dashboard({ produto, onBack }) {
       setIsGenerating(false);
       loadMemoryData();
     } else {
-      // Mock se fora do Electron
       setTimeout(() => {
         alert(`[Mock] Skill "${selectedSkill.name}" executada com tom ${toneMatrix}!`);
         setIsGenerating(false);
+        setCenterView('chat');
         setSelectedSkill(null);
         setSkillFormData({});
         loadMemoryData();
@@ -189,357 +225,642 @@ export default function Dashboard({ produto, onBack }) {
     }
   };
 
+  // Áudio - Gravar via Microfone (MediaRecorder)
+  const startAudioRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      const chunks = [];
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          chunks.push(e.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(chunks, { type: 'audio/webm' });
+        const reader = new FileReader();
+        reader.readAsDataURL(blob);
+        reader.onloadend = () => {
+          const base64data = reader.result.split(',')[1];
+          setAttachments(prev => [
+            ...prev,
+            {
+              type: 'audio',
+              data: base64data,
+              mimeType: 'audio/webm',
+              previewUrl: URL.createObjectURL(blob)
+            }
+          ]);
+        };
+      };
+
+      mediaRecorderRef.current = mediaRecorder;
+      mediaRecorder.start();
+      setIsRecording(true);
+      setRecordingTime(0);
+
+      recordingIntervalRef.current = setInterval(() => {
+        setRecordingTime(prev => prev + 1);
+      }, 1000);
+
+    } catch (error) {
+      console.error('Falha ao gravar áudio:', error);
+      alert('Erro ao acessar o microfone. Por favor, forneça as permissões necessárias.');
+    }
+  };
+
+  const stopAudioRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+      setIsRecording(false);
+      if (recordingIntervalRef.current) {
+        clearInterval(recordingIntervalRef.current);
+      }
+    }
+  };
+
+  // Upload de Foto
+  const triggerPhotoUpload = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  };
+
+  const handlePhotoUpload = (e) => {
+    const files = Array.from(e.target.files);
+    files.forEach(file => {
+      if (file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const base64 = reader.result.split(',')[1];
+          setAttachments(prev => [
+            ...prev,
+            {
+              type: 'image',
+              data: base64,
+              mimeType: file.type,
+              previewUrl: reader.result
+            }
+          ]);
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+  };
+
+  // Suporte para colar imagens diretamente no chat (Ctrl+V)
+  const handlePaste = (e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.indexOf('image') !== -1) {
+        const file = item.getAsFile();
+        if (file) {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const base64 = reader.result.split(',')[1];
+            setAttachments(prev => [
+              ...prev,
+              {
+                type: 'image',
+                data: base64,
+                mimeType: file.type,
+                previewUrl: reader.result
+              }
+            ]);
+          };
+          reader.readAsDataURL(file);
+        }
+      }
+    }
+  };
+
+  // Captura de Tela (Screenshot)
+  const handleCaptureScreenshot = async () => {
+    if (window.api && window.api.captureWindow) {
+      const dataUrl = await window.api.captureWindow();
+      if (dataUrl) {
+        const base64data = dataUrl.split(',')[1];
+        const mimeType = dataUrl.split(';')[0].split(':')[1] || 'image/png';
+        setAttachments(prev => [
+          ...prev,
+          {
+            type: 'image',
+            data: base64data,
+            mimeType,
+            previewUrl: dataUrl
+          }
+        ]);
+      } else {
+        alert("Erro ao realizar captura de tela.");
+      }
+    } else {
+      // Fallback desenvolvimento fora do Electron
+      alert("[Mock] Captura de tela realizada!");
+      const mockBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+      setAttachments(prev => [
+        ...prev,
+        {
+          type: 'image',
+          data: mockBase64,
+          mimeType: 'image/png',
+          previewUrl: `data:image/png;base64,${mockBase64}`
+        }
+      ]);
+    }
+  };
+
+  // Filtro de Skills
+  const filteredSkills = skills.filter(sk => {
+    const matchesSearch =
+      sk.name.toLowerCase().includes(skillsSearchQuery.toLowerCase()) ||
+      sk.description.toLowerCase().includes(skillsSearchQuery.toLowerCase()) ||
+      (sk.category || '').toLowerCase().includes(skillsSearchQuery.toLowerCase());
+
+    const matchesCategory =
+      activeCategoryFilter === 'all' ||
+      (sk.category || '').toLowerCase().trim() === activeCategoryFilter;
+
+    return matchesSearch && matchesCategory;
+  });
 
   return (
-    <div className="w-full h-full max-w-6xl max-h-[85vh] glass-panel glow-indigo rounded-2xl flex overflow-hidden drag-region">
-      
-      {/* Sidebar */}
-      <div className="w-64 bg-slate-950/40 border-r border-white/5 flex flex-col no-drag-region">
-        <div className="p-4 border-b border-white/5 flex items-center justify-between">
-          <div className="flex items-center">
-            <span className="text-xl mr-2">{produto?.avatar}</span>
-            <span className="font-semibold text-sm truncate max-w-[120px] text-white">{produto?.nome}</span>
+    <div className={`w-full h-full ${isMaximized ? 'max-w-none max-h-screen rounded-none' : 'max-w-7xl max-h-[92vh] rounded-3xl'} glass-panel glow-indigo-subtle flex flex-col overflow-hidden drag-region text-white`}>
+
+      {/* Top Header Bar (Google NotebookLM Style) */}
+      <div 
+        onDoubleClick={() => {
+          if (window.api && window.api.maximizeWindow) {
+            window.api.maximizeWindow();
+          }
+        }}
+        className="px-6 py-3 bg-[#11131a] border-b border-white/5 flex items-center justify-between no-drag-region cursor-default"
+      >
+        <div className="flex items-center gap-3">
+          <span className="text-xl">🍃</span>
+          <div className="flex flex-col">
+            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Produto Ativo</span>
+            <h1 className="text-sm font-bold text-white leading-tight flex items-center gap-1.5">
+              <span>{produto?.avatar || '🚀'}</span>
+              <span>{produto?.nome}</span>
+            </h1>
           </div>
-          <button 
-            onClick={onBack}
-            className="text-[10px] text-slate-400 hover:text-white px-2 py-1 rounded bg-white/5 border border-white/10 transition-colors"
-          >
-            Voltar
-          </button>
         </div>
 
-        {/* Abas */}
-        <div className="flex-1 p-2 space-y-1 overflow-y-auto custom-scrollbar">
-          <button 
-            onClick={() => { setActiveTab('chat'); setSelectedSkill(null); }}
-            className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${activeTab === 'chat' ? 'bg-indigo-600/30 border border-indigo-500/25 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'}`}
-          >
-            💬 Chat com Agentes
-          </button>
-          
-          <button 
-            onClick={() => { setActiveTab('skills'); setSelectedSkill(null); }}
-            className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${activeTab === 'skills' ? 'bg-indigo-600/30 border border-indigo-500/25 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'}`}
-          >
-            ⚡ Habilidades de Marketing
-          </button>
-          
-          <button 
-            onClick={() => { setActiveTab('memory'); loadMemoryData(); }}
-            className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${activeTab === 'memory' ? 'bg-indigo-600/30 border border-indigo-500/25 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'}`}
-          >
-            🧠 Memória (MEMORY.md)
-          </button>
-          
-          <button 
-            onClick={() => { setActiveTab('db'); loadMemoryData(); }}
-            className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${activeTab === 'db' ? 'bg-indigo-600/30 border border-indigo-500/25 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'}`}
-          >
-            🗄️ Banco de Dados (state.db)
-          </button>
-          
-          <button 
-            onClick={() => { setActiveTab('settings'); setSelectedSkill(null); }}
-            className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${activeTab === 'settings' ? 'bg-indigo-600/30 border border-indigo-500/25 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'}`}
-          >
-            ⚙️ Configurações (BYOK)
-          </button>
-        </div>
-
-        {/* Sync Button */}
-        <div className="p-3 border-t border-white/5 flex flex-col gap-2">
+        {/* Header Action Buttons */}
+        <div className="flex items-center gap-2">
           <button
-            onClick={handleSyncSkills}
-            className="w-full bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-lg py-2 text-[10px] font-semibold transition-all"
+            onClick={onBack}
+            className="flex items-center gap-1 px-3 py-1.5 bg-white/5 border border-white/10 rounded-xl text-[10px] font-bold text-slate-300 hover:text-white hover:bg-white/10 transition-all active:scale-95 no-drag-region"
           >
-            🔄 Sincronizar Habilidades
+            <span>+ Novo Produto</span>
           </button>
-          <div className="text-center text-[9px] text-slate-500">
-            Zéfiro local marketing copilot v1.0.0
-          </div>
+
+          <button
+            onClick={() => setCenterView(centerView === 'settings' ? 'chat' : 'settings')}
+            className={`flex items-center gap-1 px-3 py-1.5 border rounded-xl text-[10px] font-bold transition-all active:scale-95 no-drag-region ${centerView === 'settings' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'}`}
+          >
+            <span>Configurações</span>
+            <span className="text-[7px] px-1 py-0.2 bg-indigo-500/30 text-indigo-300 rounded font-semibold">PRO</span>
+          </button>
+
+          <button
+            onClick={() => {
+              if (window.api && window.api.maximizeWindow) {
+                window.api.maximizeWindow();
+              }
+            }}
+            className="flex items-center justify-center p-1.5 bg-white/5 border border-white/10 rounded-xl text-slate-300 hover:text-white hover:bg-white/10 transition-all active:scale-95 no-drag-region"
+            title={isMaximized ? "Restaurar tamanho" : "Maximizar"}
+          >
+            {isMaximized ? (
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8 4v4H4M16 4v4h4M4 16h4v4M20 16h-4v4" />
+              </svg>
+            ) : (
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4h4M16 4h4v4M4 16v4h4M16 20h4v-4" />
+              </svg>
+            )}
+          </button>
         </div>
       </div>
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col bg-slate-900/10 no-drag-region overflow-hidden">
-        
-        {/* Top Control Bar (Common for Chat & Skills) */}
-        {(activeTab === 'chat' || (activeTab === 'skills' && selectedSkill)) && (
-          <div className="px-6 py-3 bg-white/5 border-b border-white/5 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div>
-                <label className="block text-[9px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Tone Matrix</label>
-                <select
-                  value={toneMatrix}
-                  onChange={(e) => setToneMatrix(e.target.value)}
-                  className="bg-slate-950 border border-white/10 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-indigo-500"
-                >
-                  <option value="persuasivo">Resposta Direta Persuasiva</option>
-                  <option value="amigavel">Conversacional Amigável</option>
-                  <option value="complacente">Conformidade / Black Suave</option>
-                  <option value="agressivo">Nicho Black Agressivo</option>
-                  <option value="neutro">Neutro e Informativo</option>
-                </select>
+      {/* Main 3-Column Layout */}
+      <div className="flex-1 flex overflow-hidden no-drag-region bg-[#0e1015]">
+        {/* COLUMN 1: Ferramentas / SKILLS (Left) */}
+        <LeftPanel
+          skills={skills}
+          filteredSkills={filteredSkills}
+          skillsSearchQuery={skillsSearchQuery}
+          setSkillsSearchQuery={setSkillsSearchQuery}
+          activeCategoryFilter={activeCategoryFilter}
+          setActiveCategoryFilter={setActiveCategoryFilter}
+          selectedSkill={selectedSkill}
+          setSelectedSkill={setSelectedSkill}
+          centerView={centerView}
+          setCenterView={setCenterView}
+          setSkillFormData={setSkillFormData}
+          leftPanelExpanded={leftPanelExpanded}
+          setLeftPanelExpanded={setLeftPanelExpanded}
+          handleSyncSkills={handleSyncSkills}
+        />
+
+        {/* COLUMN 2: CONVERSA / VIEWER (Center, 50%) */}
+        <div className="flex-1 flex flex-col bg-[#0e1015]">
+
+          {/* Subheader do Meio (Dropdown de Tom de Voz) */}
+          {(centerView === 'chat' || centerView === 'skill') && (
+            <div className="px-6 py-2.5 bg-[#11131a]/40 border-b border-white/5 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Tom de Voz:</span>
+                  <select
+                    value={toneMatrix}
+                    onChange={(e) => setToneMatrix(e.target.value)}
+                    className="bg-slate-900 border border-white/10 rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                  >
+                    <option value="persuasivo">Resposta Direta Persuasiva</option>
+                    <option value="amigavel">Conversacional Amigável</option>
+                    <option value="complacente">Conformidade / Black Suave</option>
+                    <option value="agressivo">Nicho Black Agressivo</option>
+                    <option value="neutro">Neutro e Informativo</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="simple-lang"
+                    checked={simpleLanguage}
+                    onChange={(e) => setSimpleLanguage(e.target.checked)}
+                    className="rounded border-white/10 bg-slate-900 text-indigo-600 focus:ring-0 w-3.5 h-3.5 cursor-pointer"
+                  />
+                  <label htmlFor="simple-lang" className="text-xs text-slate-400 select-none cursor-pointer">Linguagem Simples</label>
+                </div>
               </div>
-              <div className="flex items-center gap-2 mt-4">
-                <input
-                  type="checkbox"
-                  id="simple-lang"
-                  checked={simpleLanguage}
-                  onChange={(e) => setSimpleLanguage(e.target.checked)}
-                  className="rounded border-white/10 bg-slate-950 text-indigo-600 focus:ring-0 focus:ring-offset-0 w-4 h-4 cursor-pointer"
-                />
-                <label htmlFor="simple-lang" className="text-xs text-slate-400 select-none cursor-pointer">Linguagem Simples</label>
-              </div>
+
+              {centerView === 'chat' && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Agente:</span>
+                  <span className="text-xs bg-indigo-500/10 text-indigo-300 border border-indigo-500/25 px-2 py-0.5 rounded-lg font-medium">
+                    {selectedAgent ? `${selectedAgent.avatar} ${selectedAgent.name}` : 'Nenhum'}
+                  </span>
+                </div>
+              )}
             </div>
-            
-            {activeTab === 'chat' && (
-              <div className="flex items-center gap-2">
-                <label className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider">Agente:</label>
-                <select
-                  value={selectedAgent?.id || ''}
-                  onChange={(e) => setSelectedAgent(agents.find(a => a.id === e.target.value))}
-                  className="bg-slate-950 border border-white/10 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-indigo-500"
-                >
-                  {agents.map(a => (
-                    <option key={a.id} value={a.id}>{a.avatar} {a.name}</option>
-                  ))}
-                </select>
+          )}
+
+          {/* MAIN CENTER PANEL VIEWS */}
+          <div className="flex-1 p-6 overflow-y-auto custom-scrollbar flex flex-col justify-between">
+
+            {/* VIEW: CHAT */}
+            {centerView === 'chat' && (
+              <div className="h-full flex flex-col justify-between">
+
+                {/* Chat History */}
+                {chatMessages.length === 0 ? (
+                  <AgentWelcomeCard selectedAgent={selectedAgent} />
+                ) : (
+                  <div className="flex-1 space-y-4 mb-4 overflow-y-auto custom-scrollbar pr-2">
+                    {chatMessages.map((msg, i) => {
+                      const isUser = msg.role === 'user';
+                      return (
+                        <div key={i} className={`flex flex-col ${isUser ? 'items-end' : 'items-start'}`}>
+                          <span className="text-[9px] text-slate-500 mb-1">
+                            {msg.date} • {isUser ? 'Você' : selectedAgent?.name}
+                          </span>
+                          <div className={`p-3 rounded-2xl text-xs max-w-lg leading-relaxed ${isUser ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-[#151722] border border-white/5 text-slate-200 rounded-tl-none whitespace-pre-wrap shadow-md'}`}>
+                            {msg.content || (
+                              <span className="flex gap-1 items-center py-1">
+                                <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce"></span>
+                                <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce delay-100"></span>
+                                <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce delay-200"></span>
+                              </span>
+                            )}
+
+                            {/* Mostrar Anexos no Histórico */}
+                            {msg.attachments && msg.attachments.length > 0 && (
+                              <div className="flex gap-2 mt-2 flex-wrap border-t border-white/10 pt-2">
+                                {msg.attachments.map((att, idx) => (
+                                  <div key={idx} className="w-16 h-16 rounded-lg overflow-hidden border border-white/10 bg-black/40 flex items-center justify-center">
+                                    {att.type === 'image' ? (
+                                      <img src={att.previewUrl} alt="Anexo" className="w-full h-full object-cover" />
+                                    ) : (
+                                      <span className="text-xl">🎙️</span>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <div ref={chatEndRef} />
+                  </div>
+                )}
+
+                {/* Multimodal Chat Input Area */}
+                <div className="mt-auto flex flex-col bg-[#11131a] border border-white/10 rounded-2xl overflow-hidden shadow-lg">
+
+                  {/* File/Media input */}
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    accept="image/*"
+                    onChange={handlePhotoUpload}
+                    className="hidden"
+                  />
+
+                  {/* Preview de Anexos antes do envio */}
+                  {attachments.length > 0 && (
+                    <div className="flex gap-2 p-3 bg-black/30 border-b border-white/5 flex-wrap">
+                      {attachments.map((att, index) => (
+                        <div key={index} className="relative group w-14 h-14 rounded-xl overflow-hidden border border-white/10 flex items-center justify-center bg-slate-900 shadow">
+                          {att.type === 'image' ? (
+                            <img src={att.previewUrl} alt="Preview" className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="flex flex-col items-center justify-center text-[9px] text-indigo-400">
+                              <span>🎙️ Áudio</span>
+                              <span className="text-[7px] text-slate-500">Pronto</span>
+                            </div>
+                          )}
+                          <button
+                            onClick={() => {
+                              setAttachments(prev => prev.filter((_, i) => i !== index));
+                            }}
+                            className="absolute top-0.5 right-0.5 bg-black/70 hover:bg-red-600 text-white rounded-full p-0.5 text-[8px] transition-colors"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Input controls and box */}
+                  <div className="flex items-center gap-2 p-2">
+
+                    {/* Media buttons */}
+                    <div className="flex items-center gap-1.5 px-2 border-r border-white/5">
+
+                      {/* Microfone */}
+                      <button
+                        onClick={isRecording ? stopAudioRecording : startAudioRecording}
+                        className={`p-2 rounded-xl text-sm transition-all hover:bg-white/5 ${isRecording ? 'text-red-500 animate-pulse bg-red-500/10' : 'text-slate-400 hover:text-white'}`}
+                        title={isRecording ? `Gravando (${recordingTime}s) - Clique para parar` : 'Gravar áudio do microfone'}
+                      >
+                        🎙️
+                      </button>
+
+                      {/* Upload de Foto */}
+                      <button
+                        onClick={triggerPhotoUpload}
+                        className="p-2 rounded-xl text-sm text-slate-400 hover:text-white hover:bg-white/5 transition-all"
+                        title="Upload de foto"
+                      >
+                        🖼️
+                      </button>
+
+                    </div>
+
+                    {/* Text Input */}
+                    <input
+                      type="text"
+                      placeholder={isRecording ? `Gravando áudio... (${recordingTime}s)` : `Pergunte ao ${selectedAgent?.name || 'agente'}...`}
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSendChat()}
+                      onPaste={handlePaste}
+                      className="w-full bg-transparent text-white focus:outline-none px-3 py-2 text-xs placeholder-slate-500 disabled:opacity-50"
+                      disabled={isGenerating || isRecording}
+                    />
+
+                    {/* Botão de Enviar */}
+                    <button
+                      onClick={handleSendChat}
+                      disabled={isGenerating || isRecording || (!chatInput.trim() && attachments.length === 0)}
+                      className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white rounded-xl p-2 text-xs font-semibold transition-colors flex items-center justify-center"
+                    >
+                      ➔
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
-          </div>
-        )}
 
-        <div className="flex-1 p-6 overflow-y-auto custom-scrollbar">
-          
-          {/* TAB: CHAT */}
-          {activeTab === 'chat' && (
-            <div className="h-full flex flex-col justify-between">
-              {chatMessages.length === 0 ? (
-                <div className="text-center my-auto p-6 max-w-md mx-auto">
-                  <span className="text-4xl block mb-4">{selectedAgent?.avatar || '🤖'}</span>
-                  <h4 className="font-bold text-white text-base">Conversar com {selectedAgent?.name || 'Agente'}</h4>
-                  <p className="text-slate-400 text-xs mt-2">
-                    Ele assume o papel de **{selectedAgent?.role}** e lerá as memórias de posicionamento do seu produto para dar respostas ultra direcionadas e diretas.
-                  </p>
-                </div>
-              ) : (
-                <div className="flex-1 space-y-4 mb-4 overflow-y-auto custom-scrollbar pr-2">
-                  {chatMessages.map((msg, i) => (
-                    <div key={i} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                      <span className="text-[9px] text-slate-500 mb-1">{msg.date} • {msg.role === 'user' ? 'Você' : selectedAgent?.name}</span>
-                      <div className={`p-3 rounded-xl text-xs max-w-lg leading-relaxed ${msg.role === 'user' ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-white/5 border border-white/5 text-slate-200 rounded-tl-none whitespace-pre-wrap'}`}>
-                        {msg.content || (
-                          <span className="flex gap-1 items-center">
-                            <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce"></span>
-                            <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce delay-100"></span>
-                            <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce delay-200"></span>
-                          </span>
+            {/* VIEW: EXECUTE SKILL FORM */}
+            {centerView === 'skill' && selectedSkill && (
+              <div className="max-w-xl flex flex-col justify-between h-full">
+                <div>
+                  <div className="flex items-center gap-2 mb-4">
+                    <button
+                      onClick={() => { setSelectedSkill(null); setCenterView('chat'); }}
+                      className="text-xs text-indigo-400 hover:underline"
+                    >
+                      ← Voltar para Conversa
+                    </button>
+                  </div>
+
+                  {(() => {
+                    const translated = translateSkill(selectedSkill);
+                    const cleanCat = CATEGORY_MAP[(selectedSkill.category || '').toLowerCase()] || selectedSkill.category;
+                    return (
+                      <>
+                        <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest block mb-1">
+                          Habilidade: {cleanCat}
+                        </span>
+                        <h3 className="text-lg font-bold text-white">{translated.name}</h3>
+                        <p className="text-xs text-slate-400 mt-1 mb-6 leading-relaxed">{translated.description}</p>
+                      </>
+                    );
+                  })()}
+
+                  {/* Dynamic Inputs Form */}
+                  <div className="space-y-4 max-h-[300px] overflow-y-auto custom-scrollbar pr-2 mb-6">
+                    {(selectedSkill.inputs || []).map(input => (
+                      <div key={input.name}>
+                        <label className="block text-xs font-semibold text-slate-400 mb-1">{input.label}</label>
+                        {input.type === 'textarea' ? (
+                          <textarea
+                            placeholder={input.placeholder || ''}
+                            value={skillFormData[input.name] || ''}
+                            onChange={(e) => setSkillFormData({ ...skillFormData, [input.name]: e.target.value })}
+                            className="w-full bg-slate-900 border border-white/10 rounded-lg p-3 text-xs text-white focus:outline-none focus:border-indigo-500 transition-colors custom-scrollbar resize-none"
+                            rows={3}
+                          />
+                        ) : (
+                          <input
+                            type="text"
+                            placeholder={input.placeholder || ''}
+                            value={skillFormData[input.name] || ''}
+                            onChange={(e) => setSkillFormData({ ...skillFormData, [input.name]: e.target.value })}
+                            className="w-full bg-slate-900 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                          />
                         )}
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              )}
 
-              <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl p-2 mt-auto">
-                <input
-                  type="text"
-                  placeholder={`Pergunte ao ${selectedAgent?.name || 'agente'}...`}
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSendChat()}
-                  className="w-full bg-transparent text-white focus:outline-none px-3 py-1.5 text-xs placeholder-slate-400"
-                  disabled={isGenerating}
-                />
                 <button
-                  onClick={handleSendChat}
-                  disabled={isGenerating || !chatInput.trim()}
-                  className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors"
+                  onClick={handleExecuteSkill}
+                  disabled={isGenerating}
+                  className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white py-3 rounded-xl text-xs font-bold transition-all w-full flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/10"
                 >
-                  Enviar
+                  {isGenerating ? 'Processando IA...' : 'Gerar Resultado ✨'}
                 </button>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* TAB: SKILLS LIST */}
-          {activeTab === 'skills' && !selectedSkill && (
-            <div>
-              <h3 className="text-base font-bold text-white mb-4">Habilidades de Copywriting e Vendas</h3>
-              {skills.length === 0 ? (
-                <div className="text-center p-6 border border-dashed border-white/10 rounded-2xl text-xs text-slate-400">
-                  Nenhuma Skill encontrada na pasta `/skills`. Certifique-se de adicionar arquivos `SKILL.md` lá.
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {skills.map(sk => (
-                    <div 
-                      key={sk.id}
-                      onClick={() => { setSelectedSkill(sk); setSkillFormData({}); }}
-                      className="p-4 rounded-xl border border-white/5 bg-white/5 hover:border-indigo-500/30 hover:bg-white/10 transition-all cursor-pointer flex flex-col justify-between"
+            {/* VIEW: MEMORY VIEWER */}
+            {centerView === 'memory' && (
+              <div className="flex flex-col h-full">
+                <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-2">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setCenterView('chat')}
+                      className="text-xs text-indigo-400 hover:underline mr-2"
                     >
-                      <div>
-                        <span className="text-[10px] font-bold text-indigo-400 uppercase block mb-1">{sk.category}</span>
-                        <h4 className="font-bold text-white text-sm">{sk.name}</h4>
-                        <p className="text-xs text-slate-400 mt-1 line-clamp-2">{sk.description}</p>
-                      </div>
-                      <span className="text-[10px] text-indigo-400 font-semibold mt-4 align-self-end">Executar Habilidade →</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* TAB: RUN SKILL FORM */}
-          {activeTab === 'skills' && selectedSkill && (
-            <div className="max-w-xl">
-              <div className="flex items-center gap-2 mb-4">
-                <button 
-                  onClick={() => setSelectedSkill(null)}
-                  className="text-xs text-indigo-400 hover:underline"
-                >
-                  ← Voltar para lista
-                </button>
-              </div>
-              <h3 className="text-base font-bold text-white">{selectedSkill.name}</h3>
-              <p className="text-xs text-slate-400 mt-1 mb-6">{selectedSkill.description}</p>
-
-              {/* Dynamic Inputs Form */}
-              <div className="space-y-4 mb-6">
-                {(selectedSkill.inputs || []).map(input => (
-                  <div key={input.name}>
-                    <label className="block text-xs font-semibold text-slate-400 mb-1">{input.label}</label>
-                    {input.type === 'textarea' ? (
-                      <textarea
-                        placeholder={input.placeholder || ''}
-                        value={skillFormData[input.name] || ''}
-                        onChange={(e) => setSkillFormData({ ...skillFormData, [input.name]: e.target.value })}
-                        className="w-full bg-slate-950/50 border border-white/10 rounded-lg p-3 text-xs text-white focus:outline-none focus:border-indigo-500"
-                        rows={3}
-                      />
-                    ) : (
-                      <input
-                        type="text"
-                        placeholder={input.placeholder || ''}
-                        value={skillFormData[input.name] || ''}
-                        onChange={(e) => setSkillFormData({ ...skillFormData, [input.name]: e.target.value })}
-                        className="w-full bg-slate-950/50 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
-                      />
-                    )}
+                      ← Voltar
+                    </button>
+                    <h3 className="text-sm font-bold text-white">🧠 Espelho da Memória do Produto</h3>
                   </div>
-                ))}
-              </div>
-
-              <button
-                onClick={handleExecuteSkill}
-                disabled={isGenerating}
-                className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-lg text-xs font-bold transition-all w-full flex items-center justify-center gap-2"
-              >
-                {isGenerating ? 'Processando IA...' : 'Gerar Resultado ✨'}
-              </button>
-            </div>
-          )}
-
-          {/* TAB: MEMORY VIEWER */}
-          {activeTab === 'memory' && (
-            <div>
-              <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-2">
-                <h3 className="text-base font-bold text-white">🧠 Espelho da Memória do Produto</h3>
-                <span className="text-[10px] text-slate-500 font-mono">Caminho: produtos/{produto.nome.toLowerCase()}/.assistant/MEMORY.md</span>
-              </div>
-              <div 
-                className="p-6 rounded-xl border border-white/5 bg-slate-950/30 font-sans custom-scrollbar leading-relaxed"
-                dangerouslySetInnerHTML={{ __html: renderSimpleMarkdown(memoryContent) }}
-              />
-            </div>
-          )}
-
-          {/* TAB: DATABASE VIEWER */}
-          {activeTab === 'db' && (
-            <div>
-              <h3 className="text-base font-bold text-white mb-2">🗄️ Dados Estruturados (SQLite state.db)</h3>
-              <p className="text-xs text-slate-400 mb-6">
-                Consulte diretamente as tabelas indexadas que alimentam a memória léxica FTS5 do assistente.
-              </p>
-
-              {/* Busca FTS5 */}
-              <div className="flex gap-2 mb-6">
-                <input
-                  type="text"
-                  placeholder="Pesquisar fatos ou diálogos via FTS5..."
-                  value={dbSearchQuery}
-                  onChange={(e) => setDbSearchQuery(e.target.value)}
-                  className="flex-1 bg-slate-950 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  <span className="text-[8px] text-slate-500 font-mono">produtos/{produto.nome.toLowerCase()}/.assistant/MEMORY.md</span>
+                </div>
+                <div
+                  className="flex-1 p-6 rounded-2xl border border-white/5 bg-[#11131a] font-sans custom-scrollbar overflow-y-auto leading-relaxed shadow-inner"
+                  dangerouslySetInnerHTML={{ __html: renderSimpleMarkdown(memoryContent) }}
                 />
               </div>
+            )}
 
-              <div className="space-y-6">
-                {/* Tabela Facts */}
-                <div>
-                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Tabela: facts (Memória Semântica)</h4>
-                  <div className="border border-white/5 rounded-xl overflow-hidden bg-slate-950/40 text-xs">
-                    <table className="w-full border-collapse">
-                      <thead>
-                        <tr className="bg-white/5 text-slate-400 text-left">
-                          <th className="p-3 font-semibold border-b border-white/5">ID</th>
-                          <th className="p-3 font-semibold border-b border-white/5">Fato Consolidado</th>
-                          <th className="p-3 font-semibold border-b border-white/5">Data</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {dbFacts
-                          .filter(f => !dbSearchQuery || f.fato.toLowerCase().includes(dbSearchQuery.toLowerCase()))
-                          .map(f => (
-                            <tr key={f.id} className="border-b border-white/5 hover:bg-white/5">
-                              <td className="p-3 text-slate-500">{f.id}</td>
-                              <td className="p-3 text-slate-200">{f.fato}</td>
-                              <td className="p-3 text-slate-400">{new Date(f.data_criacao).toLocaleDateString()}</td>
-                            </tr>
-                          ))}
-                      </tbody>
-                    </table>
+            {/* VIEW: DATABASE VIEWER */}
+            {centerView === 'db' && (
+              <div className="flex flex-col h-full">
+                <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-2">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setCenterView('chat')}
+                      className="text-xs text-indigo-400 hover:underline mr-2"
+                    >
+                      ← Voltar
+                    </button>
+                    <h3 className="text-sm font-bold text-white">🗄️ Dados Estruturados (SQLite state.db)</h3>
                   </div>
+                  <span className="text-[8px] text-slate-500 font-mono">SQLite (FTS5)</span>
                 </div>
 
-                {/* Tabela Episodes */}
-                <div>
-                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Tabela: episodes (Histórico de Conversas)</h4>
-                  <div className="border border-white/5 rounded-xl overflow-hidden bg-slate-950/40 text-xs">
-                    <table className="w-full border-collapse">
-                      <thead>
-                        <tr className="bg-white/5 text-slate-400 text-left">
-                          <th className="p-3 font-semibold border-b border-white/5">ID</th>
-                          <th className="p-3 font-semibold border-b border-white/5">Sessão</th>
-                          <th className="p-3 font-semibold border-b border-white/5">Entrada Usuário</th>
-                          <th className="p-3 font-semibold border-b border-white/5">Resposta IA</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {dbEpisodes
-                          .filter(e => !dbSearchQuery || e.input_usuario.toLowerCase().includes(dbSearchQuery.toLowerCase()) || e.resposta_ia.toLowerCase().includes(dbSearchQuery.toLowerCase()))
-                          .map(e => (
-                            <tr key={e.id} className="border-b border-white/5 hover:bg-white/5">
-                              <td className="p-3 text-slate-500">{e.id}</td>
-                              <td className="p-3 font-mono text-slate-400">{e.sessao_id.substring(0, 8)}</td>
-                              <td className="p-3 text-slate-200 truncate max-w-xs">{e.input_usuario}</td>
-                              <td className="p-3 text-slate-300 truncate max-w-xs">{e.resposta_ia}</td>
-                            </tr>
-                          ))}
-                      </tbody>
-                    </table>
+                {/* Busca FTS5 */}
+                <div className="flex gap-2 mb-4">
+                  <input
+                    type="text"
+                    placeholder="Pesquisar fatos ou diálogos via FTS5..."
+                    value={dbSearchQuery}
+                    onChange={(e) => setDbSearchQuery(e.target.value)}
+                    className="flex-1 bg-slate-900 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                  />
+                </div>
+
+                <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-6">
+                  {/* Tabela Facts */}
+                  <div>
+                    <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Tabela: facts (Memória Semântica)</h4>
+                    <div className="border border-white/5 rounded-xl overflow-hidden bg-slate-900/40 text-xs">
+                      <table className="w-full border-collapse">
+                        <thead>
+                          <tr className="bg-white/5 text-slate-400 text-left">
+                            <th className="p-3 font-semibold border-b border-white/5">ID</th>
+                            <th className="p-3 font-semibold border-b border-white/5">Fato Consolidado</th>
+                            <th className="p-3 font-semibold border-b border-white/5">Data</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {dbFacts
+                            .filter(f => !dbSearchQuery || f.fato.toLowerCase().includes(dbSearchQuery.toLowerCase()))
+                            .map(f => (
+                              <tr key={f.id} className="border-b border-white/5 hover:bg-white/5">
+                                <td className="p-3 text-slate-500">{f.id}</td>
+                                <td className="p-3 text-slate-200">{f.fato}</td>
+                                <td className="p-3 text-slate-400">{new Date(f.data_criacao).toLocaleDateString()}</td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Tabela Episodes */}
+                  <div>
+                    <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Tabela: episodes (Histórico de Conversas)</h4>
+                    <div className="border border-white/5 rounded-xl overflow-hidden bg-slate-900/40 text-xs">
+                      <table className="w-full border-collapse">
+                        <thead>
+                          <tr className="bg-white/5 text-slate-400 text-left">
+                            <th className="p-3 font-semibold border-b border-white/5">ID</th>
+                            <th className="p-3 font-semibold border-b border-white/5">Sessão</th>
+                            <th className="p-3 font-semibold border-b border-white/5">Entrada Usuário</th>
+                            <th className="p-3 font-semibold border-b border-white/5">Resposta IA</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {dbEpisodes
+                            .filter(e => !dbSearchQuery || e.input_usuario.toLowerCase().includes(dbSearchQuery.toLowerCase()) || e.resposta_ia.toLowerCase().includes(dbSearchQuery.toLowerCase()))
+                            .map(e => (
+                              <tr key={e.id} className="border-b border-white/5 hover:bg-white/5">
+                                <td className="p-3 text-slate-500">{e.id}</td>
+                                <td className="p-3 font-mono text-slate-400">{e.sessao_id.substring(0, 8)}</td>
+                                <td className="p-3 text-slate-200 truncate max-w-xs">{e.input_usuario}</td>
+                                <td className="p-3 text-slate-300 truncate max-w-xs">{e.resposta_ia}</td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* TAB: SETTINGS */}
-          {activeTab === 'settings' && <Settings />}
+            {/* VIEW: SETTINGS */}
+            {centerView === 'settings' && (
+              <div className="flex flex-col h-full justify-between">
+                <div>
+                  <div className="flex items-center gap-2 mb-4">
+                    <button
+                      onClick={() => setCenterView('chat')}
+                      className="text-xs text-indigo-400 hover:underline mr-2"
+                    >
+                      ← Voltar para Conversa
+                    </button>
+                  </div>
+                  <Settings />
+                </div>
+              </div>
+            )}
 
+          </div>
         </div>
+
+        {/* COLUMN 3: AGENTES / AGENTES (Right) */}
+        <RightPanel
+          agents={agents}
+          selectedAgent={selectedAgent}
+          setSelectedAgent={setSelectedAgent}
+          rightPanelExpanded={rightPanelExpanded}
+          setRightPanelExpanded={setRightPanelExpanded}
+          centerView={centerView}
+          setCenterView={setCenterView}
+          produto={produto}
+        />
+
       </div>
+
     </div>
   );
 }

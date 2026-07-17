@@ -5,7 +5,8 @@ export default function Settings() {
     openai: '',
     gemini: '',
     groq: '',
-    deepseek: ''
+    deepseek: '',
+    openrouter: ''
   });
   const [status, setStatus] = useState('');
 
@@ -14,7 +15,7 @@ export default function Settings() {
     const loadKeysStatus = async () => {
       if (window.api && window.api.getApiKey) {
         const loadedKeys = {};
-        for (const provider of ['openai', 'gemini', 'groq', 'deepseek']) {
+        for (const provider of ['openai', 'gemini', 'groq', 'deepseek', 'openrouter']) {
           const key = await window.api.getApiKey(provider);
           loadedKeys[provider] = key ? '••••••••••••••••••••' : '';
         }
@@ -68,6 +69,7 @@ export default function Settings() {
           { id: 'gemini', name: 'Google Gemini API Key', placeholder: 'AIzaSy...' },
           { id: 'groq', name: 'Groq API Key', placeholder: 'gsk_...' },
           { id: 'deepseek', name: 'DeepSeek API Key', placeholder: 'sk-...' },
+          { id: 'openrouter', name: 'OpenRouter API Key', placeholder: 'sk-or-v1-...' },
         ].map(provider => (
           <div key={provider.id} className="p-4 rounded-xl border border-white/5 bg-white/5 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex-1">
