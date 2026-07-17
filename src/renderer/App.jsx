@@ -126,11 +126,24 @@ export default function App() {
             {searchQuery && (
               <button 
                 onClick={() => setSearchQuery('')}
-                className="text-[10px] text-slate-400 hover:text-white px-2 py-1 rounded bg-white/10"
+                className="text-[10px] text-slate-400 hover:text-white px-2 py-1 rounded bg-white/10 mr-2"
               >
                 Limpar
               </button>
             )}
+            <button
+              onClick={() => {
+                if (window.api && window.api.closeWindow) {
+                  window.api.closeWindow();
+                }
+              }}
+              className="p-1.5 rounded-lg bg-white/5 hover:bg-red-500/20 border border-white/10 hover:border-red-500/30 text-slate-400 hover:text-red-300 transition-all active:scale-95 flex items-center justify-center ml-1"
+              title="Fechar aplicativo"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
 
           {/* Resultados da Pesquisa */}

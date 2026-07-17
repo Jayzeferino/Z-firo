@@ -123,6 +123,12 @@ ipcMain.on('window:maximize', () => {
   }
 });
 
+ipcMain.on('window:close', () => {
+  if (mainWindow) {
+    mainWindow.close();
+  }
+});
+
 ipcMain.handle('window:capture', async () => {
   try {
     if (mainWindow) {

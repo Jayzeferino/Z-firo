@@ -445,7 +445,20 @@ export default function Dashboard({ produto, onBack, isMaximized }) {
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4h4M16 4h4v4M4 16v4h4M16 20h4v-4" />
               </svg>
-            )}
+          </button>
+
+          <button
+            onClick={() => {
+              if (window.api && window.api.closeWindow) {
+                window.api.closeWindow();
+              }
+            }}
+            className="flex items-center justify-center p-1.5 bg-red-500/20 hover:bg-red-500/35 border border-red-500/30 rounded-xl text-red-300 hover:text-white transition-all active:scale-95 no-drag-region"
+            title="Fechar aplicativo"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
           </button>
         </div>
       </div>

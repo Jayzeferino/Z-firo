@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('window:maximized-change', subscription);
     return () => ipcRenderer.removeListener('window:maximized-change', subscription);
   },
+  closeWindow: () => ipcRenderer.send('window:close'),
   
   // Produtos
   getProdutos: () => ipcRenderer.invoke('db:get-produtos'),
