@@ -1,6 +1,7 @@
 ---
 name: email-marketing
-description: Email campaign strategy, automation, and optimization. Use when creating email sequences, improving deliverability, designing automation workflows, or optimizing email performance.
+description: >-
+  Email campaign strategy, automation, and optimization. Use when creating email sequences, improving deliverability, designing automation workflows, or optimizing email performance.
 category: Email
 triggers:
   - email marketing

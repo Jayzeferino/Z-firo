@@ -1,6 +1,7 @@
 ---
 name: marketing-fundamentals
-description: Core marketing concepts, psychology, and frameworks for effective marketing. Use for foundational knowledge on funnels, customer journey, positioning, value propositions, and marketing psychology.
+description: >-
+  Core marketing concepts, psychology, and frameworks for effective marketing. Use for foundational knowledge on funnels, customer journey, positioning, value propositions, and marketing psychology.
 category: Marketing
 triggers:
   - marketing basics

@@ -1,6 +1,7 @@
 ---
 name: seo-mastery
-description: Search engine optimization strategies and tactics for organic growth. Use when optimizing content for search, conducting keyword research, performing SEO audits, or building link strategies.
+description: >-
+  Search engine optimization strategies and tactics for organic growth. Use when optimizing content for search, conducting keyword research, performing SEO audits, or building link strategies.
 category: SEO
 triggers:
   - SEO

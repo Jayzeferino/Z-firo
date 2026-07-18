@@ -1,6 +1,7 @@
 ---
 name: problem-solving
-description: Apply systematic problem-solving techniques for marketing challenges including campaign complexity (simplification cascades), creative blocks (collision-zone thinking), recurring campaign patterns (meta-pattern recognition), assumption constraints (inversion exercise), audience scale uncertainty (scale game), and dispatch when stuck. Techniques derived from proven problem-solving frameworks adapted for marketing execution.
+description: >-
+  Apply systematic problem-solving techniques for marketing challenges including campaign complexity (simplification cascades), creative blocks (collision-zone thinking), recurring campaign patterns (meta-pattern recognition), assumption constraints (inversion exercise), audience scale uncertainty (scale game), and dispatch when stuck. Techniques derived from proven problem-solving frameworks adapted for marketing execution.
 category: Marketing
 triggers:
   - stuck

@@ -183,6 +183,18 @@ ipcMain.handle('db:get-episodes', async (event, produtoId) => {
   }
 });
 
+ipcMain.handle('db:get-last-session-episodes', async (event, produtoId) => {
+  try {
+    const lastSession = db.getLastActiveSession(produtoId);
+    if (!lastSession) return { sessaoId: null, episodes: [] };
+    const episodes = db.getEpisodesBySession(produtoId, lastSession);
+    return { sessaoId: lastSession, episodes };
+  } catch (error) {
+    console.error('Error fetching last session episodes:', error);
+    return { sessaoId: null, episodes: [] };
+  }
+});
+
 ipcMain.handle('fs:read-memory', async (event, produtoNome) => {
   try {
     // Converter nome do produto em caminho de diretório seguro
@@ -258,6 +270,88 @@ ipcMain.handle('skills:run', async (event, payload) => {
   } catch (error) {
     console.error('Error executing marketing skill:', error);
     return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('models:get-available', async () => {
+  try {
+    const models = [];
+    const providers = [
+      {
+        id: 'openai',
+        name: 'OpenAI',
+        models: [
+          { id: 'gpt-4o-mini', name: 'GPT-4o Mini', tier: 'pago' },
+          { id: 'gpt-4o', name: 'GPT-4o', tier: 'pago' },
+          { id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', tier: 'pago' },
+          { id: 'gpt-4.1', name: 'GPT-4.1', tier: 'pago' },
+          { id: 'o4-mini', name: 'o4 Mini', tier: 'pago' },
+        ]
+      },
+      {
+        id: 'groq',
+        name: 'Groq',
+        models: [
+          { id: 'llama3-8b-8192', name: 'LLaMA 3 8B', tier: 'free' },
+          { id: 'llama3-70b-8192', name: 'LLaMA 3 70B', tier: 'free' },
+          { id: 'mixtral-8x7b-32768', name: 'Mixtral 8x7B', tier: 'free' },
+          { id: 'gemma2-9b-it', name: 'Gemma 2 9B', tier: 'free' },
+        ]
+      },
+      {
+        id: 'gemini',
+        name: 'Google Gemini',
+        models: [
+          { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', tier: 'free' },
+          { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', tier: 'free' },
+          { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', tier: 'free' },
+          { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', tier: 'free' },
+          { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', tier: 'free' },
+        ]
+      },
+      {
+        id: 'deepseek',
+        name: 'DeepSeek',
+        models: [
+          { id: 'deepseek-chat', name: 'DeepSeek Chat (V3)', tier: 'pago' },
+          { id: 'deepseek-reasoner', name: 'DeepSeek Reasoner (R1)', tier: 'pago' },
+        ]
+      },
+      {
+        id: 'openrouter',
+        name: 'OpenRouter',
+        models: [
+          { id: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash', tier: 'free' },
+          { id: 'google/gemini-2.5-pro', name: 'Gemini 2.5 Pro', tier: 'pago' },
+          { id: 'anthropic/claude-sonnet-4', name: 'Claude Sonnet 4', tier: 'pago' },
+          { id: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet', tier: 'pago' },
+          { id: 'openai/gpt-4o', name: 'GPT-4o', tier: 'pago' },
+          { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini', tier: 'pago' },
+          { id: 'meta-llama/llama-3.1-405b-instruct', name: 'LLaMA 3.1 405B', tier: 'free' },
+          { id: 'deepseek/deepseek-r1', name: 'DeepSeek R1', tier: 'pago' },
+        ]
+      }
+    ];
+
+    for (const prov of providers) {
+      const key = security.getKey(prov.id);
+      if (key) {
+        prov.models.forEach(m => {
+          models.push({
+            id: m.id,
+            name: m.name,
+            tier: m.tier,
+            provider: prov.id,
+            providerName: prov.name
+          });
+        });
+      }
+    }
+
+    return models;
+  } catch (error) {
+    console.error('Error getting available models:', error);
+    return [];
   }
 });
 

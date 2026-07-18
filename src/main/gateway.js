@@ -18,7 +18,7 @@ function readSkillPromptBody(filePath) {
 
 // Gateway: Chat Conversacional de Agentes
 async function handleChatStream(event, payload) {
-  const { produtoId, agentId, message, chatHistory, tone, simpleLanguage, sessaoId, attachments } = payload;
+  const { produtoId, agentId, message, chatHistory, tone, simpleLanguage, sessaoId, attachments, model } = payload;
   const webContents = event.sender;
 
   try {
@@ -37,7 +37,8 @@ async function handleChatStream(event, payload) {
       simpleLanguage,
       sessaoId,
       webContents,
-      attachments
+      attachments,
+      model
     });
 
   } catch (error) {
@@ -48,7 +49,7 @@ async function handleChatStream(event, payload) {
 
 // Gateway: Execução de Skills estruturadas
 async function executeSkill(payload) {
-  const { produtoId, skillId, inputs, tone, simpleLanguage } = payload;
+  const { produtoId, skillId, inputs, tone, simpleLanguage, model, sessaoId } = payload;
 
   try {
     // 1. Localizar e ler o arquivo físico da Skill (Procedural Memory)
@@ -76,7 +77,8 @@ async function executeSkill(payload) {
       agentProfile: { name: 'Zéfiro Engine', role: `Execução da Habilidade: ${skillId}` },
       tone,
       simpleLanguage,
-      sessaoId: 'geracao_skill'
+      sessaoId: sessaoId || 'geracao_skill',
+      model
     });
 
     if (res.success) {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-export default function Settings() {
+export default function Settings({ onKeySaved }) {
   const [keys, setKeys] = useState({
     openai: '',
     gemini: '',
@@ -43,6 +43,7 @@ export default function Settings() {
           ...prev,
           [provider]: keyToSave ? '••••••••••••••••••••' : ''
         }));
+        if (onKeySaved) onKeySaved();
       } else {
         setStatus(`Erro ao salvar chave do ${provider.toUpperCase()}.`);
       }

@@ -1,6 +1,7 @@
 ---
 name: paid-advertising
-description: Paid media strategy and optimization across platforms. Use when planning paid campaigns, optimizing ad performance, managing budgets, or setting up tracking for paid channels.
+description: >-
+  Paid media strategy and optimization across platforms. Use when planning paid campaigns, optimizing ad performance, managing budgets, or setting up tracking for paid channels.
 category: Product Campaign
 triggers:
   - paid ads

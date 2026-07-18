@@ -60,12 +60,20 @@ export default function RightPanel({
           return (
             <button
               key={a.id}
-              onClick={() => { setSelectedAgent(a); setCenterView('chat'); }}
-              className={`p-2.5 rounded-xl border text-left flex flex-col justify-between transition-all min-h-[85px] w-full min-w-0 no-drag-region ${isSelected ? 'bg-indigo-600/25 border-indigo-500 text-white shadow-lg shadow-indigo-600/10' : 'bg-slate-900/60 border-white/5 hover:border-white/10 hover:bg-white/5 text-slate-400'}`}
+              onClick={() => { 
+                if (isSelected) {
+                  setSelectedAgent(null); 
+                } else {
+                  setSelectedAgent(a); 
+                  setCenterView('chat'); 
+                }
+              }}
+              title={isSelected ? "Clique para desativar esta ação" : `Ativar ${a.name} para realizar esta ação no próximo envio`}
+              className={`p-2.5 rounded-xl border text-left flex flex-col justify-between transition-all min-h-[85px] w-full min-w-0 no-drag-region ${isSelected ? 'bg-indigo-600/25 border-indigo-500 text-white shadow-lg shadow-indigo-600/10 scale-[0.98]' : 'bg-slate-900/60 border-white/5 hover:border-white/10 hover:bg-white/5 text-slate-400 hover:-translate-y-0.5'}`}
             >
               <div className="flex items-start justify-between w-full min-w-0 mb-1">
                 <span className="text-[10px] font-bold block truncate text-white leading-tight pr-1 flex-1 min-w-0">{a.name}</span>
-                <span className="text-[9px] opacity-60 flex-shrink-0">→</span>
+                <span className="text-[9px] opacity-60 flex-shrink-0">{isSelected ? '⚡' : '→'}</span>
               </div>
               <span className="text-[8px] block opacity-75 mt-auto leading-normal line-clamp-2 min-w-0 break-words">{translateRole(a.role)}</span>
             </button>

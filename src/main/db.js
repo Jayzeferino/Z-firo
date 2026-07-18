@@ -165,8 +165,25 @@ function addEpisode(produtoId, sessaoId, inputUsuario, respostaIa) {
   return info.lastInsertRowid;
 }
 
+function getLastActiveSession(produtoId) {
+  const stmt = db.prepare('SELECT sessao_id FROM episodes WHERE produto_id = ? ORDER BY data_criacao DESC LIMIT 1');
+  const row = stmt.get(produtoId);
+  return row ? row.sessao_id : null;
+}
+
+function getEpisodesBySession(produtoId, sessaoId) {
+  const stmt = db.prepare('SELECT * FROM episodes WHERE produto_id = ? AND sessao_id = ? ORDER BY data_criacao ASC');
+  return stmt.all(produtoId, sessaoId);
+}
+
 // Busca FTS5 combinada
 function searchMemory(produtoId, query) {
+  // Sanetizar query de caracteres especiais do FTS5 (mantendo apenas letras, números e espaços)
+  const sanitizedQuery = (query || '')
+    .replace(/[^\w\s\u00C0-\u00FF]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
   // 1. Buscar nos Fatos
   const factsStmt = db.prepare(`
     SELECT f.id, f.fato, f.data_criacao, bm25(facts_fts) as rank
@@ -188,8 +205,9 @@ function searchMemory(produtoId, query) {
   `);
 
   try {
-    const matchedFacts = factsStmt.all(produtoId, query);
-    const matchedEpisodes = episodesStmt.all(produtoId, query);
+    const queryToUse = sanitizedQuery || query; // fallback para original se ficou vazia
+    const matchedFacts = factsStmt.all(produtoId, queryToUse);
+    const matchedEpisodes = episodesStmt.all(produtoId, queryToUse);
     return { facts: matchedFacts, episodes: matchedEpisodes };
   } catch (error) {
     console.error('FTS5 search error:', error);
@@ -209,5 +227,7 @@ module.exports = {
   deleteFact,
   getEpisodes,
   addEpisode,
+  getLastActiveSession,
+  getEpisodesBySession,
   searchMemory
 };

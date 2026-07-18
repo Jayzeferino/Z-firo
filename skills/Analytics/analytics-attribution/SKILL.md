@@ -1,6 +1,7 @@
 ---
 name: analytics-attribution
-description: Performance measurement, attribution modeling, and marketing ROI analysis. Use when setting up tracking, analyzing campaign performance, building attribution models, or creating marketing reports.
+description: >-
+  Performance measurement, attribution modeling, and marketing ROI analysis. Use when setting up tracking, analyzing campaign performance, building attribution models, or creating marketing reports.
 category: Analytics
 triggers:
   - analytics

@@ -77,7 +77,7 @@ class Zefiro {
 
   // Executa um turno completo de IA: monta Working Memory -> executa loop de chamada -> salva e espelha em MD
   async respond(userMessage, options = {}) {
-    const { agentProfile, chatHistory = [], tone = 'persuasivo', simpleLanguage = false, sessaoId = `session_${Date.now()}`, webContents, attachments = [] } = options;
+    const { agentProfile, chatHistory = [], tone = 'persuasivo', simpleLanguage = false, sessaoId = `session_${Date.now()}`, webContents, attachments = [], model: selectedModel } = options;
 
     // 1. Retrieval Gate: Decidir se a rodada requer consulta ao SQLite FTS5 (BM25)
     let contextMemory = '';
@@ -94,15 +94,46 @@ class Zefiro {
     // 3. Iniciar trace de execução
     const trace = llmops.startTrace(userMessage, systemPrompt, 'Zefiro Engine', 'Auto-Select');
 
-    // 4. Selecionar Provedor de IA ativo
+    // 4. Selecionar Provedor de IA ativo (considerando modelo selecionado pelo usuário)
     let provider = '';
     let apiKey = '';
-    for (const prov of ['openai', 'groq', 'gemini', 'deepseek', 'openrouter']) {
-      const key = security.getKey(prov);
-      if (key) {
-        provider = prov;
-        apiKey = key;
-        break;
+
+    // Mapeamento de modelo -> provedor para quando o usuário seleciona um modelo específico
+    const modelProviderMap = {
+      'gpt-4o-mini': 'openai', 'gpt-4o': 'openai', 'gpt-4.1-mini': 'openai', 'gpt-4.1': 'openai', 'o4-mini': 'openai',
+      'llama3-8b-8192': 'groq', 'llama3-70b-8192': 'groq', 'mixtral-8x7b-32768': 'groq', 'gemma2-9b-it': 'groq',
+      'gemini-1.5-flash': 'gemini', 'gemini-1.5-pro': 'gemini', 'gemini-2.0-flash': 'gemini', 'gemini-2.5-flash': 'gemini', 'gemini-2.5-pro': 'gemini',
+      'deepseek-chat': 'deepseek', 'deepseek-reasoner': 'deepseek',
+    };
+
+    if (selectedModel) {
+      // Inferir provedor a partir do modelo selecionado
+      const inferredProvider = modelProviderMap[selectedModel];
+      if (inferredProvider) {
+        const key = security.getKey(inferredProvider);
+        if (key) {
+          provider = inferredProvider;
+          apiKey = key;
+        }
+      } else if (selectedModel.includes('/')) {
+        // Modelos com namespace (ex: google/gemini-2.5-flash) são do OpenRouter
+        const key = security.getKey('openrouter');
+        if (key) {
+          provider = 'openrouter';
+          apiKey = key;
+        }
+      }
+    }
+
+    // Fallback: selecionar o primeiro provedor com chave configurada
+    if (!provider) {
+      for (const prov of ['openai', 'groq', 'gemini', 'deepseek', 'openrouter']) {
+        const key = security.getKey(prov);
+        if (key) {
+          provider = prov;
+          apiKey = key;
+          break;
+        }
       }
     }
 
@@ -140,7 +171,7 @@ class Zefiro {
         }
 
         const stream = await openai.chat.completions.create({
-          model: 'gpt-4o-mini',
+          model: selectedModel || 'gpt-4o-mini',
           messages: [
             { role: 'system', content: systemPrompt },
             ...chatHistory,
@@ -160,7 +191,7 @@ class Zefiro {
       else if (provider === 'groq') {
         const groq = new Groq({ apiKey });
         const stream = await groq.chat.completions.create({
-          model: 'llama3-8b-8192',
+          model: selectedModel || 'llama3-8b-8192',
           messages: [
             { role: 'system', content: systemPrompt },
             ...chatHistory,
@@ -179,7 +210,7 @@ class Zefiro {
       } 
       else if (provider === 'gemini') {
         const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+        const model = genAI.getGenerativeModel({ model: selectedModel || 'gemini-1.5-flash' });
         
         const contents = [
           { role: 'user', parts: [{ text: `INSTRUÇÕES DO SISTEMA:\n${systemPrompt}` }] }
@@ -214,7 +245,7 @@ class Zefiro {
       else if (provider === 'deepseek') {
         const client = new OpenAI({ apiKey, baseURL: 'https://api.deepseek.com/v1' });
         const stream = await client.chat.completions.create({
-          model: 'deepseek-chat',
+          model: selectedModel || 'deepseek-chat',
           messages: [
             { role: 'system', content: systemPrompt },
             ...chatHistory,
@@ -260,7 +291,7 @@ class Zefiro {
         }
 
         const stream = await client.chat.completions.create({
-          model: 'google/gemini-2.5-flash',
+          model: selectedModel || 'google/gemini-2.5-flash',
           messages: [
             { role: 'system', content: systemPrompt },
             ...chatHistory,

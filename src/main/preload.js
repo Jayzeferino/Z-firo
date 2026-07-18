@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('api', {
   // Banco de Dados / Memória
   getFacts: (produtoId) => ipcRenderer.invoke('db:get-facts', produtoId),
   getEpisodes: (produtoId) => ipcRenderer.invoke('db:get-episodes', produtoId),
+  getLastSessionEpisodes: (produtoId) => ipcRenderer.invoke('db:get-last-session-episodes', produtoId),
   readMemoryFile: (produtoNome) => ipcRenderer.invoke('fs:read-memory', produtoNome),
   
   // Habilidades (Skills) e Agentes
@@ -31,6 +32,9 @@ contextBridge.exposeInMainWorld('api', {
   // Segurança (Chaves de API)
   saveApiKey: (provider, key) => ipcRenderer.invoke('sec:save-key', provider, key),
   getApiKey: (provider) => ipcRenderer.invoke('sec:get-key', provider),
+  
+  // Modelos disponíveis
+  getAvailableModels: () => ipcRenderer.invoke('models:get-available'),
   
   // Comunicação IA
   onChatStream: (callback) => {

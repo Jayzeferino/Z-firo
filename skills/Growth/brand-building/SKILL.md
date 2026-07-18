@@ -1,6 +1,7 @@
 ---
 name: brand-building
-description: Brand strategy, identity, positioning, and voice development. Use when developing brand guidelines, creating positioning statements, defining brand voice, or building brand architecture.
+description: >-
+  Brand strategy, identity, positioning, and voice development. Use when developing brand guidelines, creating positioning statements, defining brand voice, or building brand architecture.
 category: Growth
 triggers:
   - brand

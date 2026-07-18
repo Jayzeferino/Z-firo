@@ -51,6 +51,13 @@ export default function Dashboard({ produto, onBack, isMaximized }) {
   const [chatInput, setChatInput] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
 
+  // Seleção de Modelo
+  const [availableModels, setAvailableModels] = useState([]);
+  const [selectedModel, setSelectedModel] = useState('');
+
+  // Sessão de Chat Ativa
+  const [activeSessionId, setActiveSessionId] = useState('');
+
   // Dados de Memória e Database
   const [memoryContent, setMemoryContent] = useState('');
   const [dbFacts, setDbFacts] = useState([]);
@@ -77,7 +84,19 @@ export default function Dashboard({ produto, onBack, isMaximized }) {
   useEffect(() => {
     loadSkillsAndAgents();
     loadMemoryData();
+    loadAvailableModels();
   }, [produto]);
+
+  const loadAvailableModels = async () => {
+    if (window.api && window.api.getAvailableModels) {
+      const models = await window.api.getAvailableModels();
+      setAvailableModels(models || []);
+      // Selecionar o primeiro modelo disponível se nenhum estiver selecionado
+      if (models && models.length > 0 && !selectedModel) {
+        setSelectedModel(models[0].id);
+      }
+    }
+  };
 
   useEffect(() => {
     if (chatEndRef.current) {
@@ -91,9 +110,8 @@ export default function Dashboard({ produto, onBack, isMaximized }) {
       const allAgents = await window.api.getAgents();
       setSkills(allSkills || []);
       setAgents(allAgents || []);
-      if (allAgents && allAgents.length > 0) {
-        setSelectedAgent(allAgents[0]); // Seleciona o primeiro agente por padrão
-      }
+      // Nenhum agente selecionado por padrão
+      setSelectedAgent(null);
     }
   };
 
@@ -106,7 +124,41 @@ export default function Dashboard({ produto, onBack, isMaximized }) {
 
       const mdContent = await window.api.readMemoryFile(produto.nome);
       setMemoryContent(mdContent || '# Memória não sincronizada ou vazia.');
+
+      // Carregar sessão de chat ativa
+      const sessionData = await window.api.getLastSessionEpisodes(produto.id);
+      if (sessionData && sessionData.sessaoId) {
+        setActiveSessionId(sessionData.sessaoId);
+        
+        // Converter episódios em mensagens de chat
+        const messages = [];
+        (sessionData.episodes || []).forEach(ep => {
+          messages.push({
+            role: 'user',
+            content: ep.input_usuario,
+            date: new Date(ep.data_criacao).toLocaleTimeString(),
+            attachments: []
+          });
+          messages.push({
+            role: 'assistant',
+            content: ep.resposta_ia,
+            date: new Date(ep.data_criacao).toLocaleTimeString()
+          });
+        });
+        setChatMessages(messages);
+      } else {
+        // Gerar nova sessão e limpar se produto não tiver histórico
+        const newSessId = `session_${Date.now()}`;
+        setActiveSessionId(newSessId);
+        setChatMessages([]);
+      }
     }
+  };
+
+  const handleNewChat = () => {
+    const newSessId = `session_${Date.now()}`;
+    setActiveSessionId(newSessId);
+    setChatMessages([]);
   };
 
   const handleSyncSkills = async () => {
@@ -165,8 +217,13 @@ export default function Dashboard({ produto, onBack, isMaximized }) {
         chatHistory: chatMessages.slice(-10).map(m => ({ role: m.role, content: m.content })),
         tone: toneMatrix,
         simpleLanguage,
-        attachments: payloadAttachments
+        attachments: payloadAttachments,
+        model: selectedModel || undefined,
+        sessaoId: activeSessionId
       });
+
+      // Desativar agente após envio (tornando-o uma ação pontual)
+      setSelectedAgent(null);
 
       setTimeout(() => {
         unsubscribe();
@@ -194,32 +251,76 @@ export default function Dashboard({ produto, onBack, isMaximized }) {
     if (!selectedSkill) return;
     setIsGenerating(true);
 
+    const userMsg = {
+      role: 'user',
+      content: `⚡ Executando Habilidade: **${selectedSkill.name}**\n\n` + 
+        Object.entries(skillFormData)
+          .map(([key, val]) => `- **${key}**: ${val}`)
+          .join('\n'),
+      date: new Date().toLocaleTimeString(),
+      attachments: []
+    };
+
+    const assistantMsg = { 
+      role: 'assistant', 
+      content: '', // Ativa animação de carregamento
+      date: new Date().toLocaleTimeString() 
+    };
+
+    // Ir para a aba de chat para ver o carregamento
+    setCenterView('chat');
+    setChatMessages(prev => [...prev, userMsg, assistantMsg]);
+
+    const activeSkill = selectedSkill;
+    const activeFormData = skillFormData;
+
+    setSelectedSkill(null);
+    setSkillFormData({});
+
     if (window.api && window.api.runSkill) {
       const res = await window.api.runSkill({
         produtoId: produto.id,
-        skillId: selectedSkill.id,
-        inputs: skillFormData,
+        skillId: activeSkill.id,
+        inputs: activeFormData,
         tone: toneMatrix,
-        simpleLanguage
+        simpleLanguage,
+        model: selectedModel || undefined,
+        sessaoId: activeSessionId
       });
 
       if (res && res.success) {
-        alert(`Resultado Gerado pela Habilidade:\n\n${res.result}`);
-        setCenterView('chat');
-        setSelectedSkill(null);
-        setSkillFormData({});
+        setChatMessages(prev => {
+          const updated = [...prev];
+          const last = updated[updated.length - 1];
+          if (last && last.role === 'assistant') {
+            last.content = res.result;
+          }
+          return updated;
+        });
       } else {
-        alert(`Erro ao gerar resultado: ${res?.error || 'Erro desconhecido'}`);
+        setChatMessages(prev => {
+          const updated = [...prev];
+          const last = updated[updated.length - 1];
+          if (last && last.role === 'assistant') {
+            last.content = `⚠️ **Erro ao gerar resultado:** ${res?.error || 'Erro desconhecido'}`;
+          }
+          return updated;
+        });
       }
       setIsGenerating(false);
       loadMemoryData();
     } else {
+      // Mock se fora do Electron
       setTimeout(() => {
-        alert(`[Mock] Skill "${selectedSkill.name}" executada com tom ${toneMatrix}!`);
+        setChatMessages(prev => {
+          const updated = [...prev];
+          const last = updated[updated.length - 1];
+          if (last && last.role === 'assistant') {
+            last.content = `[Mock] Resultado da habilidade "${activeSkill.name}" gerado com sucesso no tom ${toneMatrix}!`;
+          }
+          return updated;
+        });
         setIsGenerating(false);
-        setCenterView('chat');
-        setSelectedSkill(null);
-        setSkillFormData({});
         loadMemoryData();
       }, 1500);
     }
@@ -445,6 +546,7 @@ export default function Dashboard({ produto, onBack, isMaximized }) {
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4h4M16 4h4v4M4 16v4h4M16 20h4v-4" />
               </svg>
+            )}
           </button>
 
           <button
@@ -515,14 +617,35 @@ export default function Dashboard({ produto, onBack, isMaximized }) {
                   />
                   <label htmlFor="simple-lang" className="text-xs text-slate-400 select-none cursor-pointer">Linguagem Simples</label>
                 </div>
+
+
               </div>
 
               {centerView === 'chat' && (
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Agente:</span>
-                  <span className="text-xs bg-indigo-500/10 text-indigo-300 border border-indigo-500/25 px-2 py-0.5 rounded-lg font-medium">
-                    {selectedAgent ? `${selectedAgent.avatar} ${selectedAgent.name}` : 'Nenhum'}
-                  </span>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={handleNewChat}
+                    className="flex items-center gap-1 px-2.5 py-1 bg-indigo-500/10 border border-indigo-500/20 hover:bg-indigo-500/20 rounded-lg text-[9px] font-bold text-indigo-300 hover:text-white transition-all active:scale-95"
+                    title="Iniciar novo chat e arquivar o atual como memória episódica"
+                  >
+                    <span>+ Novo Chat</span>
+                  </button>
+                  
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Agente:</span>
+                    <span className="text-xs bg-indigo-500/10 text-indigo-300 border border-indigo-500/25 px-2 py-0.5 rounded-lg font-medium flex items-center gap-1">
+                      <span>{selectedAgent ? `${selectedAgent.avatar} ${selectedAgent.name}` : 'Nenhum'}</span>
+                      {selectedAgent && (
+                        <button 
+                          onClick={() => setSelectedAgent(null)} 
+                          className="text-indigo-400 hover:text-red-400 font-bold transition-colors ml-1 cursor-pointer"
+                          title="Desativar Agente"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </span>
+                  </div>
                 </div>
               )}
             </div>
@@ -537,7 +660,12 @@ export default function Dashboard({ produto, onBack, isMaximized }) {
 
                 {/* Chat History */}
                 {chatMessages.length === 0 ? (
-                  <AgentWelcomeCard selectedAgent={selectedAgent} />
+                  <AgentWelcomeCard 
+                    selectedAgent={selectedAgent} 
+                    onSuggestPrompt={(prompt) => {
+                      setChatInput(prompt);
+                    }}
+                  />
                 ) : (
                   <div className="flex-1 space-y-4 mb-4 overflow-y-auto custom-scrollbar pr-2">
                     {chatMessages.map((msg, i) => {
@@ -547,14 +675,20 @@ export default function Dashboard({ produto, onBack, isMaximized }) {
                           <span className="text-[9px] text-slate-500 mb-1">
                             {msg.date} • {isUser ? 'Você' : selectedAgent?.name}
                           </span>
-                          <div className={`p-3 rounded-2xl text-xs max-w-lg leading-relaxed ${isUser ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-[#151722] border border-white/5 text-slate-200 rounded-tl-none whitespace-pre-wrap shadow-md'}`}>
-                            {msg.content || (
-                              <span className="flex gap-1 items-center py-1">
-                                <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce"></span>
-                                <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce delay-100"></span>
-                                <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce delay-200"></span>
-                              </span>
-                            )}
+                          <div className={`p-3 rounded-2xl text-xs max-w-lg leading-relaxed ${isUser ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-[#151722] border border-white/5 text-slate-200 rounded-tl-none shadow-md'}`}>
+                             {msg.content ? (
+                               isUser ? (
+                                 <div className="whitespace-pre-wrap">{msg.content}</div>
+                               ) : (
+                                 <div dangerouslySetInnerHTML={{ __html: renderSimpleMarkdown(msg.content) }} />
+                               )
+                             ) : (
+                               <span className="flex gap-1 items-center py-1">
+                                 <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce"></span>
+                                 <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce delay-100"></span>
+                                 <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce delay-200"></span>
+                               </span>
+                             )}
 
                             {/* Mostrar Anexos no Histórico */}
                             {msg.attachments && msg.attachments.length > 0 && (
@@ -640,6 +774,40 @@ export default function Dashboard({ produto, onBack, isMaximized }) {
                         🖼️
                       </button>
 
+                    </div>
+
+                    {/* Model Selector Dropdown */}
+                    <div className="flex items-center border-r border-white/5 pr-2">
+                      <select
+                        value={selectedModel}
+                        onChange={(e) => setSelectedModel(e.target.value)}
+                        className="bg-transparent border-none outline-none text-xs text-slate-400 hover:text-white cursor-pointer focus:ring-0 w-[140px] truncate transition-colors appearance-none"
+                        style={{ WebkitAppearance: 'none', MozAppearance: 'none' }}
+                        title="Selecionar Modelo de IA"
+                      >
+                        {availableModels.length === 0 ? (
+                          <option value="" className="bg-slate-900">Sem provedor</option>
+                        ) : (
+                          Object.entries(
+                            availableModels.reduce((groups, model) => {
+                              const group = model.providerName || model.provider;
+                              if (!groups[group]) groups[group] = [];
+                              groups[group].push(model);
+                              return groups;
+                            }, {})
+                          ).map(([providerName, models]) => (
+                            <optgroup key={providerName} label={providerName} className="bg-slate-900 text-slate-400 font-semibold">
+                              {models.map(m => (
+                                <option key={m.id} value={m.id} className="bg-slate-900 text-white font-normal">
+                                  {m.name} {m.tier === 'free' ? '(Free)' : '(Pago)'}
+                                </option>
+                              ))}
+                            </optgroup>
+                          ))
+                        )}
+                      </select>
+                      {/* Custom dropdown arrow */}
+                      <span className="text-slate-500 text-[10px] pointer-events-none -ml-4">▼</span>
                     </div>
 
                     {/* Text Input */}
@@ -852,7 +1020,7 @@ export default function Dashboard({ produto, onBack, isMaximized }) {
                       ← Voltar para Conversa
                     </button>
                   </div>
-                  <Settings />
+                  <Settings onKeySaved={loadAvailableModels} />
                 </div>
               </div>
             )}

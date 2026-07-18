@@ -1,6 +1,7 @@
 ---
 name: clarify-product
-description: Relentless interactive interview to explore, map out, and document a product's marketing positioning, personas, pain points, differentiators, and core benefits before starting copywriting or campaign tasks.
+description: >-
+  Relentless interactive interview to explore, map out, and document a product's marketing positioning, personas, pain points, differentiators, and core benefits before starting copywriting or campaign tasks.
 category: Marketing
 triggers:
   - clarify product
